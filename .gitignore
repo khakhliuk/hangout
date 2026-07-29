@@ -1,0 +1,12 @@
+.DS_Store
+.env
+.env.*
+!.env.example
+
+node_modules
+dist
+*.log
+
+# miniapp/ and supabase/ have their own .gitignore for their subtrees
+# (build output, .temp, .branches, etc.) — this covers root-level tooling.
+

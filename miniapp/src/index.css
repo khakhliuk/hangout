@@ -1,0 +1,76 @@
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--tg-theme-secondary-bg-color, #efeff4);
+  overscroll-behavior: none;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  font-family: var(
+    --tgui--font-family,
+    -apple-system,
+    system-ui,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    'Helvetica Neue',
+    'Apple Color Emoji',
+    'Segoe UI Emoji',
+    sans-serif
+  );
+}
+
+@media (prefers-color-scheme: dark) {
+  body {
+    background: var(--tg-theme-secondary-bg-color, #000);
+  }
+}
+
+
+footer,
+footer * {
+  color: var(--tgui--hint_color) !important;
+}
+
+section label {
+  background: rgba(255, 255, 255, 0.08) !important;
+  border-radius: 12px;
+}
+
+label.vote-winner {
+  background: rgba(255, 235, 59, 0.16) !important;
+}
+
+.recurrence-badge {
+  background: rgba(0, 0, 0, 0.05);
+  color: rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-color-scheme: dark) {
+  .recurrence-badge {
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.55);
+  }
+}
+
+section header {
+  --tgui--section_header_text_color: var(--tgui--hint_color);
+}
+#root {
+  min-height: var(--tg-viewport-stable-height, 100vh);
+  padding-top: calc(
+    var(--tg-viewport-safe-area-inset-top, 0px) +
+    var(--tg-viewport-content-safe-area-inset-top, 0px)
+  );
+  padding-bottom: calc(
+    var(--tg-viewport-safe-area-inset-bottom, 0px) +
+    var(--tg-viewport-content-safe-area-inset-bottom, 0px)
+  );
+  padding-left: var(--tg-viewport-safe-area-inset-left, 0px);
+  padding-right: var(--tg-viewport-safe-area-inset-right, 0px);
+  box-sizing: border-box;
+}
