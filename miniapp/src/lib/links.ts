@@ -1,5 +1,5 @@
 import { openLink, openTelegramLink, retrieveLaunchParams, shareURL } from '@telegram-apps/sdk-react'
-import { BOT_USERNAME } from './config'
+import { BOT_USERNAME, MINI_APP_NAME } from './config'
 import { isInTelegram } from '../telegram'
 
 // Opening maps links is broken on Telegram Desktop (both the bridge and
@@ -25,7 +25,7 @@ export function openAddBotLink() {
 }
 
 export function buildSpaceInviteLink(spaceId: string): string {
-  return `https://t.me/${BOT_USERNAME}/hangout?startapp=s_${spaceId}`
+  return `https://t.me/${BOT_USERNAME}/${MINI_APP_NAME}?startapp=s_${spaceId}`
 }
 
 export function shareSpaceInvite(spaceId: string, spaceTitle: string) {

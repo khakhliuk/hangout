@@ -4,6 +4,7 @@ import { AppRoot } from '@telegram-apps/telegram-ui'
 import '@telegram-apps/telegram-ui/dist/styles.css'
 import './index.css'
 import { initTelegram } from './telegram'
+import { BOT_USERNAME, MINI_APP_NAME } from './lib/config'
 import App from './App'
 
 const inTelegram = initTelegram()
@@ -26,4 +27,8 @@ function Root() {
   )
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(<Root />)
+if (!inTelegram) {
+  window.location.href = `https://t.me/${BOT_USERNAME}/${MINI_APP_NAME}`
+} else {
+  ReactDOM.createRoot(document.getElementById('root')!).render(<Root />)
+}
