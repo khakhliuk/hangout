@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Cell, List, Section, Spinner } from '@telegram-apps/telegram-ui'
+import { List, Section, Spinner } from '@telegram-apps/telegram-ui'
 import Avatar from '../components/Avatar'
 import { useBackButton } from '../lib/useBackButton'
-import { isInTelegram } from '../telegram'
 import { loadMembers, removeMember } from '../lib/api'
 import type { SpaceMember } from '../lib/api'
 
@@ -49,11 +48,6 @@ export default function SpaceMembers({ spaceId, spaceTitle, adminTgUserId, myTgU
 
   return (
     <>
-      {!isInTelegram() && (
-        <Cell style={{ color: 'var(--tgui--link_color)' }} onClick={handleBack}>
-          ‹ Назад
-        </Cell>
-      )}
       <List>
         <Section header={`Учасники · ${spaceTitle}`}>
           {loading ? (

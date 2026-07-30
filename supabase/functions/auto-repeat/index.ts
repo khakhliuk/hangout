@@ -24,11 +24,54 @@ type EventCandidate = {
   event_place_options: OptionRow[];
 };
 
+// Kept in sync with DISPLAY_TZ in notify-reminders / notify-event.
+const DISPLAY_TZ = "Europe/Kyiv";
+
+// How far ahead of UTC `tz` is at that particular instant, in ms. Derived by
+// rendering the instant as wall-clock components in `tz` and re-reading them
+// as if they were UTC — the gap between the two is the offset in effect then,
+// which is what makes this DST-aware rather than a fixed +2/+3.
+// Returns null if the runtime's ICU build rejects the named zone, so callers
+// can fall back to plain UTC arithmetic instead of taking the whole run down.
+function tzOffsetMs(instant: Date, tz: string): number | null {
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: tz,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit", second: "2-digit",
+      hourCycle: "h23",
+    }).formatToParts(instant);
+    const part = (type: string) => Number(parts.find((p) => p.type === type)!.value);
+    const asIfUtc = Date.UTC(
+      part("year"), part("month") - 1, part("day"),
+      part("hour"), part("minute"), part("second"),
+    );
+    return asIfUtc - instant.getTime();
+  } catch (e) {
+    console.error(`auto-repeat: timeZone "${tz}" unsupported, using UTC arithmetic:`, e);
+    return null;
+  }
+}
+
+// A repeat keeps the same *wall-clock* time, not the same UTC offset: an 18:00
+// event stays 18:00 for the people attending it. Naive UTC arithmetic (+7 days
+// on the raw instant) silently shifts it by an hour across a DST boundary,
+// because 15:00Z is 18:00 Kyiv in summer but 17:00 Kyiv in winter. So do the
+// arithmetic on the local calendar and convert back, re-reading the offset at
+// the target date in case the shift crossed a transition.
 function nextOccurrence(baseIso: string, recurrence: "weekly" | "monthly"): Date {
-  const next = new Date(baseIso);
-  if (recurrence === "weekly") next.setDate(next.getDate() + 7);
-  else next.setMonth(next.getMonth() + 1);
-  return next;
+  const base = new Date(baseIso);
+  const baseOffset = tzOffsetMs(base, DISPLAY_TZ) ?? 0;
+
+  // Local wall-clock components, parked in a UTC-based Date purely so the
+  // setUTC* helpers do plain calendar math on them with no zone of their own.
+  const wall = new Date(base.getTime() + baseOffset);
+  if (recurrence === "weekly") wall.setUTCDate(wall.getUTCDate() + 7);
+  else wall.setUTCMonth(wall.getUTCMonth() + 1);
+
+  const provisional = new Date(wall.getTime() - baseOffset);
+  const targetOffset = tzOffsetMs(provisional, DISPLAY_TZ) ?? baseOffset;
+  return targetOffset === baseOffset ? provisional : new Date(wall.getTime() - targetOffset);
 }
 
 const RATE_LIMIT = 5;

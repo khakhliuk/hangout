@@ -3,7 +3,6 @@ import { Button, Cell, List, Section, Switch, Textarea } from '@telegram-apps/te
 import { useBackButton } from '../lib/useBackButton'
 import { confirmDestructive } from '../lib/confirm'
 import { shareSpaceInvite } from '../lib/links'
-import { isInTelegram } from '../telegram'
 import type { ReminderMinutes, SpaceSettings, UserSettings } from '../lib/types'
 
 const REMINDER_OPTIONS: { value: ReminderMinutes; label: string }[] = [
@@ -71,11 +70,6 @@ export default function Settings({
 
   return (
     <>
-      {!isInTelegram() && (
-        <Cell style={{ color: 'var(--tgui--link_color)' }} onClick={onBack}>
-          ‹ Назад
-        </Cell>
-      )}
       <List>
         <Section header="Сповіщення" footer="Бот пише в приватний чат — переконайся, що ти його не заблокував">
           <Cell

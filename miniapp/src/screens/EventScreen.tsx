@@ -27,7 +27,6 @@ import {
 import { openIcsLink } from '../lib/calendar'
 import { mapsLinkVisible, openExternal } from '../lib/links'
 import { useBackButton } from '../lib/useBackButton'
-import { isInTelegram } from '../telegram'
 import { CATEGORIES, type EventItem, type PlaceOption, type PlaceSuggestion, type Rsvp } from '../lib/types'
 import * as api from '../lib/api'
 
@@ -179,11 +178,6 @@ export default function EventScreen({
         if ('ontouchstart' in window) setTimeout(() => setTyping(isTextField(document.activeElement)), 100)
       }}
     >
-      {!isInTelegram() && (
-        <Cell style={{ color: 'var(--tgui--link_color)' }} onClick={onBack}>
-          ‹ Назад
-        </Cell>
-      )}
       <div style={{ textAlign: 'center', padding: '20px 16px 4px' }}>
         <div style={{ fontSize: 56, lineHeight: 1.2 }}>{category.emoji}</div>
         <Title level="2" weight="2" style={{ marginTop: 6 }}>

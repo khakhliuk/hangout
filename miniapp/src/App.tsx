@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { retrieveLaunchParams } from '@telegram-apps/sdk-react'
 import { Button, Placeholder, Spinner } from '@telegram-apps/telegram-ui'
 import { login, type TgUser } from './lib/auth'
-import { isInTelegram } from './telegram'
 import Main from './screens/Main'
 
 function getStartParam(): string | null {
@@ -19,10 +18,6 @@ export default function App() {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isInTelegram()) {
-      setUser({ id: 0, first_name: 'Дев', username: null, photo_url: null })
-      return
-    }
     login()
       .then(setUser)
       .catch((e: unknown) => setError(e instanceof Error ? e.message : 'Щось пішло не так'))

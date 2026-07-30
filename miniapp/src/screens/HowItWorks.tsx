@@ -1,6 +1,5 @@
-import { Caption, Cell, List, Section, Title } from '@telegram-apps/telegram-ui'
+import { Caption, List, Section, Title } from '@telegram-apps/telegram-ui'
 import { useBackButton } from '../lib/useBackButton'
-import { isInTelegram } from '../telegram'
 
 type Props = {
   onBack: () => void
@@ -70,11 +69,6 @@ export default function HowItWorks({ onBack }: Props) {
 
   return (
     <>
-      {!isInTelegram() && (
-        <Cell style={{ color: 'var(--tgui--link_color)' }} onClick={onBack}>
-          ‹ Назад
-        </Cell>
-      )}
       <div style={{ textAlign: 'center', padding: '20px 16px 8px' }}>
         <div style={{ fontSize: 56, lineHeight: 1.1 }}>🧭</div>
         <Title level="2" weight="2" style={{ marginTop: 8 }}>

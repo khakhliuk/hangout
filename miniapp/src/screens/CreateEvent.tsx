@@ -7,7 +7,6 @@ import RepeatIcon from '../components/RepeatIcon'
 import * as api from '../lib/api'
 import { mapsLinkVisible, openExternal, parsePlaceInput, resolvePlace } from '../lib/links'
 import { useBackButton } from '../lib/useBackButton'
-import { isInTelegram } from '../telegram'
 import type { NewEventDraft } from '../lib/useHangoutData'
 import { CATEGORIES, type Category, type PlaceSuggestion, type Recurrence } from '../lib/types'
 
@@ -97,6 +96,7 @@ export default function CreateEvent({ memberId, onBack, onSubmit, initial }: Pro
     title.trim().length <= MAX_TITLE &&
     category !== null &&
     slots.length > 0 &&
+    places.length > 0 &&
     (max === null || (Number.isInteger(max) && max > 0))
 
   const addSlot = (value: string) => {
@@ -145,12 +145,6 @@ export default function CreateEvent({ memberId, onBack, onSubmit, initial }: Pro
         if ('ontouchstart' in window) setTimeout(() => setTyping(isTextField(document.activeElement)), 100)
       }}
     >
-      {!isInTelegram() && (
-        <Cell style={{ color: 'var(--tgui--link_color)' }} onClick={onBack}>
-          ‹ Назад
-        </Cell>
-      )}
-
       <div style={{ textAlign: 'center', padding: '20px 16px 8px' }}>
         <div style={{ fontSize: 56, lineHeight: 1.1 }}>{category ? CATEGORIES[category].emoji : '🗓️'}</div>
         <Title level="2" weight="2" style={{ marginTop: 8 }}>

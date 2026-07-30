@@ -33,13 +33,46 @@ const CATEGORIES: Record<string, string> = {
   nature: "🌲", home: "🏠", party: "🎉", trip: "🚗", other: "✨",
 };
 
+// Slots are stored as absolute timestamptz (the miniapp converts from the
+// browser's local zone on create), and the Edge Runtime runs with TZ=UTC — so
+// anything formatted here without an explicit timeZone prints UTC, which is an
+// hour or three off what the user actually picked. There's no per-user or
+// per-space timezone in the schema, so pin the display zone; if that ever
+// changes, this is the constant to replace with a lookup.
+const DISPLAY_TZ = "Europe/Kyiv";
+
+// A named timeZone throws RangeError on ICU builds without the full tz
+// database — and this runs at module scope, so an uncaught throw here stops
+// the module from evaluating at all, `Deno.serve` never registers, and every
+// reminder silently stops. Probe once and degrade to UTC: a message with the
+// wrong hour still beats no message, and the log line says which happened.
+function buildTimeFmt(): Intl.DateTimeFormat {
+  const opts: Intl.DateTimeFormatOptions = {
+    day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false,
+  };
+  try {
+    const fmt = new Intl.DateTimeFormat("uk-UA", { ...opts, timeZone: DISPLAY_TZ });
+    fmt.format(new Date());
+    return fmt;
+  } catch (e) {
+    console.error(`notify-reminders: timeZone "${DISPLAY_TZ}" unsupported, falling back to UTC:`, e);
+    return new Intl.DateTimeFormat("uk-UA", { ...opts, timeZone: "UTC" });
+  }
+}
+
+const timeFmt = buildTimeFmt();
+
 function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const day = d.getUTCDate().toString().padStart(2, "0");
-  const month = (d.getUTCMonth() + 1).toString().padStart(2, "0");
-  const hours = d.getUTCHours().toString().padStart(2, "0");
-  const minutes = d.getUTCMinutes().toString().padStart(2, "0");
-  return `${day}.${month} о ${hours}:${minutes}`;
+  try {
+    const parts = timeFmt.formatToParts(new Date(iso));
+    const part = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+    return `${part("day")}.${part("month")} о ${part("hour")}:${part("minute")}`;
+  } catch (e) {
+    console.error("notify-reminders: formatTime failed, falling back to raw UTC:", e);
+    const d = new Date(iso);
+    const pad = (n: number) => n.toString().padStart(2, "0");
+    return `${pad(d.getUTCDate())}.${pad(d.getUTCMonth() + 1)} о ${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
+  }
 }
 
 const REMINDER_WINDOWS = [60, 180, 1440];
@@ -106,15 +139,38 @@ Deno.serve(async (req) => {
     const now = new Date();
     let totalSent = 0;
 
+    // `?debug=1` reports how many rows survive each filter, so a silent run
+    // can be traced to the exact stage that emptied out instead of guessed at.
+    // `?dry=1` additionally skips the claim insert and the Telegram call, so
+    // diagnosing costs nothing and burns no dedup rows.
+    const params = new URL(req.url).searchParams;
+    const debug = params.get("debug") === "1";
+    const dryRun = params.get("dry") === "1";
+    const report: Record<string, unknown>[] = [];
+
     for (const minutes of REMINDER_WINDOWS) {
       const windowStart = new Date(now.getTime() + (minutes - 5) * 60_000);
       const windowEnd = new Date(now.getTime() + (minutes + 5) * 60_000);
+
+      const stage: Record<string, unknown> = {
+        minutes,
+        window: `${windowStart.toISOString()} .. ${windowEnd.toISOString()}`,
+        slotsInWindow: 0,
+        confirmedEvents: 0,
+        goingRsvps: 0,
+        membersResolved: 0,
+        profilesWithThisReminderSetting: 0,
+        skippedAlreadySent: 0,
+        sent: 0,
+      };
+      if (debug) report.push(stage);
 
       const { data: dueSlots } = await db
         .from("event_slots")
         .select("id, event_id, starts_at")
         .gte("starts_at", windowStart.toISOString())
         .lte("starts_at", windowEnd.toISOString());
+      stage.slotsInWindow = dueSlots?.length ?? 0;
       if (!dueSlots?.length) continue;
 
       const { data: events } = await db
@@ -126,6 +182,7 @@ Deno.serve(async (req) => {
 
       const slotById = new Map(dueSlots.map((s) => [s.id as string, s]));
       const eventsInWindow = (events ?? []).filter((e) => e.confirmed_slot_id && slotById.has(e.confirmed_slot_id as string));
+      stage.confirmedEvents = eventsInWindow.length;
       if (!eventsInWindow.length) continue;
 
       const eventIds = eventsInWindow.map((e) => e.id as string);
@@ -140,6 +197,7 @@ Deno.serve(async (req) => {
         .in("event_id", eventIds)
         .eq("status", "going")
         .not("member_id", "is", null);
+      stage.goingRsvps = goingRsvps?.length ?? 0;
       if (!goingRsvps?.length) continue;
 
       const memberIds = [...new Set(goingRsvps.map((r) => r.member_id as string))];
@@ -148,6 +206,7 @@ Deno.serve(async (req) => {
         .from("members")
         .select("id, tg_user_id")
         .in("id", memberIds);
+      stage.membersResolved = memberRows?.length ?? 0;
       if (!memberRows?.length) continue;
 
       const tgByMember = new Map(memberRows.map((m) => [m.id as string, m.tg_user_id as number]));
@@ -166,6 +225,7 @@ Deno.serve(async (req) => {
         .in("profile_id", profileIds)
         .eq("reminder_minutes", minutes);
       const enabledProfiles = new Set((settingsRows ?? []).map((r) => r.profile_id as string));
+      stage.profilesWithThisReminderSetting = enabledProfiles.size;
       if (enabledProfiles.size === 0) continue;
 
       for (const rsvp of goingRsvps) {
@@ -188,31 +248,68 @@ Deno.serve(async (req) => {
           .eq("profile_id", profileId)
           .eq("minutes", minutes)
           .maybeSingle();
-        if (alreadySent) continue;
+        if (alreadySent) {
+          stage.skippedAlreadySent = (stage.skippedAlreadySent as number) + 1;
+          continue;
+        }
+
+        if (dryRun) {
+          stage.sent = (stage.sent as number) + 1;
+          continue;
+        }
 
         const { error: insertErr } = await db
           .from("event_reminders_sent")
           .insert({ event_id: eventId, profile_id: profileId, minutes });
         if (insertErr) continue;
 
-        const emoji = CATEGORIES[event.category] ?? "✨";
-        const label = minutes >= 1440 ? "завтра" : `через ${minutes === 60 ? "годину" : "3 години"}`;
-        const text = `⏰ Нагадування: ${emoji} <b>${escapeHtml(event.title)}</b> — ${label}, ${formatTime(slot.starts_at)}`;
-        const keyboard = {
-          inline_keyboard: [[{ text: "Відкрити в Hangout", url: `${MINIAPP_LINK}?startapp=e_${eventId}` }]],
-        };
+        // The row above is a claim, not a receipt — it's inserted first so two
+        // overlapping cron runs can't both send. That means every failure path
+        // from here on has to release it again, otherwise the reminder is
+        // burned permanently: the next run sees the row, treats it as already
+        // delivered, and that person never gets this reminder at all.
+        let delivered = false;
+        try {
+          const emoji = CATEGORIES[event.category] ?? "✨";
+          const label = minutes >= 1440 ? "завтра" : `через ${minutes === 60 ? "годину" : "3 години"}`;
+          const text = `⏰ Нагадування: ${emoji} <b>${escapeHtml(event.title)}</b> — ${label}, ${formatTime(slot.starts_at)}`;
+          const keyboard = {
+            inline_keyboard: [[{ text: "Відкрити в Hangout", url: `${MINIAPP_LINK}?startapp=e_${eventId}` }]],
+          };
 
-        const result = await tg("sendMessage", {
-          chat_id: tgUserId,
-          text,
-          parse_mode: "HTML",
-          reply_markup: keyboard,
-        });
-        if (result.ok) totalSent++;
+          const result = await tg("sendMessage", {
+            chat_id: tgUserId,
+            text,
+            parse_mode: "HTML",
+            reply_markup: keyboard,
+          });
+          delivered = result.ok === true;
+          if (!delivered) {
+            console.error(`notify-reminders: telegram rejected ${eventId}/${profileId}:`, JSON.stringify(result));
+          }
+        } catch (e) {
+          console.error(`notify-reminders: send failed for ${eventId}/${profileId}:`, e);
+        }
+
+        if (delivered) {
+          totalSent++;
+          stage.sent = (stage.sent as number) + 1;
+        } else {
+          await db
+            .from("event_reminders_sent")
+            .delete()
+            .eq("event_id", eventId)
+            .eq("profile_id", profileId)
+            .eq("minutes", minutes);
+        }
       }
     }
 
-    return json({ ok: true, sent: totalSent });
+    return json({
+      ok: true,
+      sent: totalSent,
+      ...(debug ? { now: now.toISOString(), dryRun, windows: report } : {}),
+    });
   } catch (e) {
     console.error("notify-reminders error:", e);
     return json({ error: "failed" }, 500);

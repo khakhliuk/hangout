@@ -65,7 +65,25 @@ const CATEGORIES: Record<string, string> = {
   nature: "🌲", home: "🏠", party: "🎉", trip: "🚗", other: "✨",
 };
 
-const dateFmt = new Intl.DateTimeFormat("uk-UA", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+// The Edge Runtime runs with TZ=UTC, so an Intl formatter with no explicit
+// timeZone prints UTC rather than the local time the user picked in the
+// miniapp. Kept in sync with DISPLAY_TZ in notify-reminders.
+const DISPLAY_TZ = "Europe/Kyiv";
+
+// Constructed defensively: a named timeZone throws RangeError on ICU builds
+// without the full tz database, and at module scope that would stop the whole
+// function from booting rather than just misformatting a date.
+const dateFmt = (() => {
+  const opts: Intl.DateTimeFormatOptions = { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" };
+  try {
+    const fmt = new Intl.DateTimeFormat("uk-UA", { ...opts, timeZone: DISPLAY_TZ });
+    fmt.format(new Date());
+    return fmt;
+  } catch (e) {
+    console.error(`notify-event: timeZone "${DISPLAY_TZ}" unsupported, falling back to UTC:`, e);
+    return new Intl.DateTimeFormat("uk-UA", { ...opts, timeZone: "UTC" });
+  }
+})();
 
 // User-controlled text (event titles, names, place names) goes straight into
 // an HTML-parse_mode message — unescaped "&"/"<"/">" makes Telegram reject
