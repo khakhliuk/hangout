@@ -60,6 +60,29 @@ label.vote-winner {
 section header {
   --tgui--section_header_text_color: var(--tgui--hint_color);
 }
+
+/* "Сьогодні" is the one section that should catch the eye on open, so it opts
+   out of the grey-header rule above and its rows get a faint accent wash.
+   Higher specificity than `section header`, so no !important needed there. */
+section.section-today header {
+  --tgui--section_header_text_color: var(--tgui--link_color);
+}
+
+section.section-today header * {
+  color: var(--tgui--link_color) !important;
+  font-weight: 600;
+}
+
+.today-cell {
+  background: rgba(0, 122, 255, 0.09) !important;
+}
+
+@media (prefers-color-scheme: dark) {
+  .today-cell {
+    background: rgba(10, 132, 255, 0.18) !important;
+  }
+}
+
 #root {
   min-height: var(--tg-viewport-stable-height, 100vh);
   padding-top: calc(

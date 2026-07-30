@@ -218,6 +218,7 @@ export default function Main({ user, startParam }: Props) {
       ) : (
         <EventList
           events={data.events}
+          meId={data.meId}
           onOpen={setOpenEventId}
           onCreate={() => setCreating(true)}
           onHowItWorks={() => setHowItWorksOpen(true)}
