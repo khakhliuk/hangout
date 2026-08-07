@@ -352,26 +352,71 @@ export function useHangoutData(user: TgUser, startParam: string | null, openEven
     if (!event || (status !== 'proposed' && status !== 'confirmed')) return
 
     let cancelled = false
-    const poll = () => {
-      api.loadEvents(activeSpaceId).then((rows) => {
-        if (!cancelled) setEvents(rows)
-      }).catch(() => {})
-    }
-    const id = setInterval(poll, 3000)
+    let inFlight = false
+    let timer: ReturnType<typeof setInterval> | null = null
+    // Serialised copy of the last payload. Comparing against it keeps the poll
+    // from calling setEvents when nothing moved — otherwise every tick hands
+    // React a brand-new object graph and re-renders the screen every 3s just to
+    // paint the same pixels.
+    let lastSerialised = JSON.stringify(event)
 
-    // Desktop browsers (and embedded webviews) throttle setInterval hard while
-    // the tab/window is backgrounded, so relying on the timer alone leaves the
-    // screen stale for minutes. Force a refetch the moment it's foregrounded.
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') poll()
+    const poll = () => {
+      // A slow response must not let ticks stack up behind it.
+      if (cancelled || inFlight) return
+      inFlight = true
+      api
+        .loadEvent(openEventId)
+        .then((fresh) => {
+          if (cancelled || !fresh) return
+          const serialised = JSON.stringify(fresh)
+          if (serialised !== lastSerialised) {
+            lastSerialised = serialised
+            setEvents((prev) => prev.map((e) => (e.id === fresh.id ? fresh : e)))
+          }
+          // The gate above only runs when the effect is set up, so an event
+          // that starts or gets cancelled while it's on screen would otherwise
+          // keep being polled until the user navigates away. Nothing changes
+          // on it after that point, so drop the timer.
+          const next = eventStatus(fresh)
+          if (next !== 'proposed' && next !== 'confirmed') stop()
+        })
+        .catch(() => {})
+        .finally(() => {
+          inFlight = false
+        })
     }
-    document.addEventListener('visibilitychange', onVisible)
+
+    const start = () => {
+      if (timer === null) timer = setInterval(poll, 3000)
+    }
+    const stop = () => {
+      if (timer !== null) {
+        clearInterval(timer)
+        timer = null
+      }
+    }
+
+    // Webviews throttle background timers unevenly — Telegram Desktop keeps
+    // them running longer than mobile does — so the interval is stopped
+    // outright while hidden rather than left firing at whatever rate the host
+    // decides, and a fresh read happens the moment the screen comes back.
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        poll()
+        start()
+      } else {
+        stop()
+      }
+    }
+
+    if (document.visibilityState === 'visible') start()
+    document.addEventListener('visibilitychange', onVisibility)
     window.addEventListener('focus', poll)
 
     return () => {
       cancelled = true
-      clearInterval(id)
-      document.removeEventListener('visibilitychange', onVisible)
+      stop()
+      document.removeEventListener('visibilitychange', onVisibility)
       window.removeEventListener('focus', poll)
     }
   }, [openEventId, activeSpaceId])

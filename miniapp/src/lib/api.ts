@@ -149,6 +149,20 @@ export async function loadEvents(spaceId: string): Promise<EventItem[]> {
   return ((data ?? []) as unknown as EventRow[]).map(mapEvent)
 }
 
+// Same projection as loadEvents but for a single row, so watching one open
+// event doesn't re-download a month of the whole space every few seconds.
+// Returns null when the row is gone or no longer visible under RLS, which the
+// caller treats as "nothing to merge" rather than an error.
+export async function loadEvent(eventId: string): Promise<EventItem | null> {
+  const { data, error } = await getSupabase()
+    .from('events')
+    .select(EVENT_SELECT)
+    .eq('id', eventId)
+    .maybeSingle()
+  if (error) throw error
+  return data ? mapEvent(data as unknown as EventRow) : null
+}
+
 type PlaceSuggestionPlace = {
   id: string
   name: string
@@ -279,6 +293,35 @@ export async function addSlot(eventId: string, memberId: string, startsAt: strin
   notifyEvent(eventId)
 }
 
+// Bulk counterpart to addSlot, for createEvent. Inserting the dates one at a
+// time chained 2N round trips (each vote waits on its own slot id, each slot
+// waits on the previous one) even though the dates are independent of each
+// other — this collapses that to two, regardless of how many were picked.
+//
+// The order PostgREST returns inserted rows in isn't guaranteed, which is fine
+// here: every vote belongs to the same member, so only the ids matter and not
+// which date each one came from. Pairing them back up would need starts_at in
+// the projection and an explicit match.
+//
+// It also makes the step atomic. The loop could leave the first date committed
+// and the event half-built if a later one failed; a single statement either
+// writes them all or none.
+//
+// No notifyEvent here — createEvent fires it once at the end, after finalize.
+async function insertSlots(eventId: string, memberId: string, startsAt: string[]): Promise<void> {
+  if (startsAt.length === 0) return
+  const db = getSupabase()
+  const { data: slots, error } = await db
+    .from('event_slots')
+    .insert(startsAt.map((s) => ({ event_id: eventId, starts_at: s, added_by: memberId })))
+    .select('id')
+  if (error) throw error
+  const { error: voteErr } = await db
+    .from('slot_votes')
+    .insert((slots ?? []).map((s) => ({ slot_id: s.id, member_id: memberId })))
+  if (voteErr) throw voteErr
+}
+
 export async function addPlace(eventId: string, memberId: string, value: string): Promise<void> {
   await insertPlaceOption(eventId, memberId, value)
   notifyEvent(eventId)
@@ -384,9 +427,7 @@ export async function createEvent(spaceId: string, memberId: string, draft: NewE
     .single()
   if (error) throw error
 
-  for (const startsAt of draft.slots) {
-    await addSlot(event.id, memberId, startsAt)
-  }
+  await insertSlots(event.id, memberId, draft.slots)
   for (const place of draft.places) {
     await insertPlaceOption(event.id, memberId, place.mapsUrl ?? place.name)
   }

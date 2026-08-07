@@ -19,6 +19,7 @@ import {
   winningSlot,
   type EventStatus,
 } from "../lib/event";
+import { useNow } from "../lib/useNow";
 import { CATEGORIES, type EventItem } from "../lib/types";
 
 type Props = {
@@ -157,13 +158,15 @@ function decidedSlotMs(event: EventItem): number | null {
   return slot ? new Date(slot.startsAt).getTime() : null;
 }
 
-function isToday(ms: number): boolean {
+// `now` is passed in rather than read from the clock here, so the comparison is
+// tied to the value that triggers the re-render — see useNow.
+function isToday(ms: number, now: number): boolean {
   const d = new Date(ms);
-  const now = new Date();
+  const ref = new Date(now);
   return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
+    d.getFullYear() === ref.getFullYear() &&
+    d.getMonth() === ref.getMonth() &&
+    d.getDate() === ref.getDate()
   );
 }
 
@@ -176,6 +179,12 @@ export default function EventList({
 }: Props) {
   const [showPast, setShowPast] = useState(false);
 
+  // Re-renders the list as the clock moves, so an event drops out of "Сьогодні"
+  // at midnight and out of "ongoing" when it ends, without needing a data
+  // refresh. eventStatus() reads Date.now() itself; the tick is what makes it
+  // run again.
+  const now = useNow();
+
   const withStatus = events.map((e) => ({ event: e, status: eventStatus(e) }));
 
   // "Сьогодні" holds what's already running plus what's locked in for the rest
@@ -187,7 +196,7 @@ export default function EventList({
       if (x.status === "ongoing") return true;
       if (x.status !== "confirmed") return false;
       const ms = decidedSlotMs(x.event);
-      return ms !== null && isToday(ms);
+      return ms !== null && isToday(ms, now);
     })
     .map((x) => x.event)
     .sort((a, b) => (decidedSlotMs(a) ?? 0) - (decidedSlotMs(b) ?? 0));
